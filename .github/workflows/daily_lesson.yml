@@ -1,0 +1,49 @@
+name: Easy German Daily Lesson
+
+on:
+  workflow_dispatch:
+    inputs:
+      study_date:
+        description: "Study date in YYYY-MM-DD format"
+        required: true
+        default: "2026-09-29"
+
+  # Optional weekday schedule
+  # 05:10 UTC = 07:10 in Germany during CEST
+  schedule:
+    - cron: "10 5 * * 1-5"
+
+jobs:
+  lesson:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Choose study date
+        id: studydate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "study_date=${{ github.event.inputs.study_date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "study_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run daily lesson pipeline
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATA_SOURCE_ID: 6878c89b-220b-4dc4-96a1-ae021d37a2b3
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-mini
+        run: |
+          python run_daily_lesson.py --study-date "${{ steps.studydate.outputs.study_date }}"
