@@ -117,6 +117,7 @@ def fetch_ytdlp_subtitles(
             "--sub-format", "vtt",
             "--no-playlist",
             "--js-runtimes", "node",
+            "--remote-components", "ejs:github",
             "-o", outtmpl,
         ]
 
