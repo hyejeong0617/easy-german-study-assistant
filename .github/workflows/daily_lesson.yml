@@ -43,15 +43,18 @@ jobs:
           fi
 
       - name: Restore YouTube cookies
-        if: ${{ secrets.YOUTUBE_COOKIES_B64 != '' }}
         shell: bash
         env:
           YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
-          chmod 600 youtube_cookies.txt
-          echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
-          echo "YouTube cookies restored."
+          if [ -n "$YOUTUBE_COOKIES_B64" ]; then
+            printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
+            chmod 600 youtube_cookies.txt
+            echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
+            echo "YouTube cookies restored."
+          else
+            echo "YOUTUBE_COOKIES_B64 is not set. Cookie fallback will be skipped."
+          fi
 
       - name: Run daily lesson pipeline
         env:
