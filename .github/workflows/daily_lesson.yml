@@ -8,8 +8,6 @@ on:
         required: true
         default: "2026-09-29"
 
-  # Optional weekday schedule
-  # 05:10 UTC = 07:10 in Germany during CEST
   schedule:
     - cron: "10 5 * * 1-5"
 
@@ -26,6 +24,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js for yt-dlp
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -39,6 +42,17 @@ jobs:
             echo "study_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Restore YouTube cookies
+        if: ${{ secrets.YOUTUBE_COOKIES_B64 != '' }}
+        shell: bash
+        env:
+          YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
+        run: |
+          printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
+          chmod 600 youtube_cookies.txt
+          echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
+          echo "YouTube cookies restored."
+
       - name: Run daily lesson pipeline
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
@@ -47,3 +61,9 @@ jobs:
           OPENAI_MODEL: gpt-5-mini
         run: |
           python run_daily_lesson.py --study-date "${{ steps.studydate.outputs.study_date }}"
+
+      - name: Delete temporary YouTube cookies
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f youtube_cookies.txt

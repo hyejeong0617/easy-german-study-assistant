@@ -206,3 +206,42 @@ lesson JSON을 읽어 Notion 페이지에 append하고
 - `Status = Done`이면 `Review Date` 자동 계산
 - B1 playlist 전체 확장
 - 하루 20분 규칙 기반 스케줄 자동 생성
+
+
+# MVP 3 — YouTube anti-bot 대응
+
+GitHub Actions의 cloud IP가 YouTube에서 차단될 수 있으므로 자막 추출은 다음 순서로 시도합니다.
+
+1. `yt-dlp` without cookies
+2. `youtube-transcript-api`
+3. `yt-dlp` with `YOUTUBE_COOKIES_B64` fallback
+
+## GitHub Secret: YOUTUBE_COOKIES_B64
+
+`cookies.txt` 파일을 Base64 문자열로 변환한 뒤 GitHub Secret으로 저장합니다.
+
+Secret name:
+
+`YOUTUBE_COOKIES_B64`
+
+### Windows PowerShell
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt")) | Set-Clipboard
+```
+
+그러면 Base64 값이 클립보드에 복사됩니다.
+
+GitHub에서:
+
+`Settings → Secrets and variables → Actions → New repository secret`
+
+- Name: `YOUTUBE_COOKIES_B64`
+- Secret: 방금 복사한 Base64 문자열
+
+workflow 실행 시 임시 `youtube_cookies.txt`로 복원되고, 작업 종료 후 삭제됩니다.
+
+## Workflow 상태
+
+이 버전부터는 오늘 배정된 영상 중 하나라도 실패하면 GitHub Actions도 실패(빨간색)로 표시됩니다.
+더 이상 `processed=0`인데도 workflow가 초록색 Success로 끝나지 않습니다.

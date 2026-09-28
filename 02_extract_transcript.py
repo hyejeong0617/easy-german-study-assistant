@@ -3,11 +3,15 @@
 Extract a German transcript from a YouTube video.
 
 Priority:
-1) youtube-transcript-api
-2) yt-dlp auto subtitles fallback (.vtt)
+1) yt-dlp WITHOUT cookies
+2) youtube-transcript-api
+3) yt-dlp WITH cookies (GitHub Secret fallback)
 
 Output:
 - plain text transcript file
+
+Cookie fallback is optional. If --cookies-file is not provided or the file does
+not exist, step 3 is skipped.
 """
 
 from __future__ import annotations
@@ -19,6 +23,10 @@ import tempfile
 from pathlib import Path
 
 from youtube_transcript_api import YouTubeTranscriptApi
+
+
+class TranscriptExtractionError(RuntimeError):
+    pass
 
 
 def extract_video_id(video_url: str | None, video_id: str | None) -> str:
@@ -40,21 +48,28 @@ def extract_video_id(video_url: str | None, video_id: str | None) -> str:
     raise ValueError(f"Could not parse video ID from URL: {video_url}")
 
 
-def fetch_transcript_api(video_id: str) -> str:
-    api = YouTubeTranscriptApi()
-    fetched = api.fetch(video_id, languages=["de", "de-DE"])
-    lines = []
-    for snippet in fetched:
-        text = (snippet.text or "").replace("\n", " ").strip()
-        if text:
-            lines.append(text)
-    if not lines:
-        raise RuntimeError("Transcript API returned no text.")
-    return "\n".join(lines)
+def classify_error(message: str) -> str:
+    m = message.lower()
+
+    if "sign in to confirm you’re not a bot" in m or "sign in to confirm you're not a bot" in m:
+        return "YOUTUBE_BOT_CHECK"
+    if "requestblocked" in m or "blocking requests from your ip" in m:
+        return "YOUTUBE_IP_BLOCK"
+    if "no subtitles" in m or "subtitles are disabled" in m:
+        return "NO_SUBTITLES"
+    if "cookies" in m and ("expired" in m or "invalid" in m):
+        return "COOKIE_ERROR"
+    if "private video" in m:
+        return "PRIVATE_VIDEO"
+    if "video unavailable" in m:
+        return "VIDEO_UNAVAILABLE"
+
+    return "UNKNOWN"
 
 
 def parse_vtt_text(vtt_text: str) -> str:
     cleaned = []
+
     for line in vtt_text.splitlines():
         line = line.strip()
 
@@ -69,14 +84,12 @@ def parse_vtt_text(vtt_text: str) -> str:
         if re.fullmatch(r"\d+", line):
             continue
 
-        # remove basic cue markup
         line = re.sub(r"<[^>]+>", "", line)
-        line = re.sub(r"&nbsp;", " ", line).strip()
+        line = line.replace("&nbsp;", " ").strip()
 
         if line:
             cleaned.append(line)
 
-    # de-duplicate repeated consecutive captions
     deduped = []
     prev = None
     for line in cleaned:
@@ -87,7 +100,11 @@ def parse_vtt_text(vtt_text: str) -> str:
     return "\n".join(deduped)
 
 
-def fetch_ytdlp_subtitles(video_url: str, video_id: str) -> str:
+def fetch_ytdlp_subtitles(
+    video_url: str,
+    video_id: str,
+    cookies_file: str | None = None,
+) -> str:
     with tempfile.TemporaryDirectory() as tmpdir:
         outtmpl = str(Path(tmpdir) / "%(id)s.%(ext)s")
 
@@ -99,9 +116,15 @@ def fetch_ytdlp_subtitles(video_url: str, video_id: str) -> str:
             "--sub-langs", "de,de-DE",
             "--sub-format", "vtt",
             "--no-playlist",
+            "--js-runtimes", "node",
             "-o", outtmpl,
-            video_url,
         ]
+
+        if cookies_file:
+            cmd.extend(["--cookies", cookies_file])
+
+        cmd.append(video_url)
+
         proc = subprocess.run(
             cmd,
             text=True,
@@ -109,21 +132,65 @@ def fetch_ytdlp_subtitles(video_url: str, video_id: str) -> str:
             encoding="utf-8",
             errors="replace",
         )
+
+        combined = f"{proc.stdout}\n{proc.stderr}".strip()
+
         if proc.returncode != 0:
-            raise RuntimeError(f"yt-dlp subtitle download failed:\n{proc.stderr[-3000:]}")
+            code = classify_error(combined)
+            raise TranscriptExtractionError(
+                f"{code}: yt-dlp subtitle download failed:\n{combined[-3500:]}"
+            )
 
         tmp = Path(tmpdir)
-        candidates = list(tmp.glob(f"{video_id}*.vtt"))
-        if not candidates:
-            raise RuntimeError("yt-dlp did not produce a VTT subtitle file.")
+        candidates = sorted(tmp.glob(f"{video_id}*.vtt"))
 
-        vtt_text = candidates[0].read_text(encoding="utf-8", errors="replace")
+        if not candidates:
+            raise TranscriptExtractionError(
+                "NO_SUBTITLES: yt-dlp did not produce a VTT subtitle file."
+            )
+
+        vtt_text = candidates[0].read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
         transcript = parse_vtt_text(vtt_text)
 
         if not transcript.strip():
-            raise RuntimeError("Parsed VTT transcript is empty.")
+            raise TranscriptExtractionError(
+                "EMPTY_TRANSCRIPT: Parsed VTT transcript is empty."
+            )
 
         return transcript
+
+
+def fetch_transcript_api(video_id: str) -> str:
+    api = YouTubeTranscriptApi()
+
+    try:
+        fetched = api.fetch(
+            video_id,
+            languages=["de", "de-DE"],
+        )
+    except Exception as exc:
+        message = str(exc)
+        code = classify_error(message)
+        raise TranscriptExtractionError(
+            f"{code}: youtube-transcript-api failed:\n{message}"
+        ) from exc
+
+    lines = []
+
+    for snippet in fetched:
+        text = (snippet.text or "").replace("\n", " ").strip()
+        if text:
+            lines.append(text)
+
+    if not lines:
+        raise TranscriptExtractionError(
+            "EMPTY_TRANSCRIPT: transcript-api returned no text."
+        )
+
+    return "\n".join(lines)
 
 
 def main() -> None:
@@ -131,21 +198,54 @@ def main() -> None:
     parser.add_argument("--video-id")
     parser.add_argument("--video-url")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--cookies-file")
     args = parser.parse_args()
 
     vid = extract_video_id(args.video_url, args.video_id)
     url = args.video_url or f"https://www.youtube.com/watch?v={vid}"
 
-    transcript = None
-    method = None
+    failures: list[str] = []
 
+    # 1. yt-dlp without cookies
     try:
-        transcript = fetch_transcript_api(vid)
-        method = "youtube-transcript-api"
-    except Exception as first_error:
-        print(f"[warn] transcript-api failed: {first_error}")
         transcript = fetch_ytdlp_subtitles(url, vid)
-        method = "yt-dlp"
+        method = "yt-dlp-no-cookies"
+    except Exception as exc:
+        failures.append(f"1) {exc}")
+        print(f"[warn] yt-dlp without cookies failed:\n{exc}")
+        transcript = None
+        method = None
+
+    # 2. youtube-transcript-api
+    if transcript is None:
+        try:
+            transcript = fetch_transcript_api(vid)
+            method = "youtube-transcript-api"
+        except Exception as exc:
+            failures.append(f"2) {exc}")
+            print(f"[warn] transcript-api failed:\n{exc}")
+
+    # 3. yt-dlp with cookies
+    cookies_path = Path(args.cookies_file) if args.cookies_file else None
+
+    if transcript is None and cookies_path and cookies_path.exists():
+        try:
+            transcript = fetch_ytdlp_subtitles(
+                url,
+                vid,
+                cookies_file=str(cookies_path),
+            )
+            method = "yt-dlp-with-cookies"
+        except Exception as exc:
+            failures.append(f"3) {exc}")
+            print(f"[warn] yt-dlp with cookies failed:\n{exc}")
+
+    if transcript is None:
+        summary = "\n\n".join(failures)
+        raise SystemExit(
+            "Transcript extraction failed after all available methods.\n\n"
+            + summary
+        )
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
