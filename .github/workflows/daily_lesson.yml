@@ -1,18 +1,15 @@
-name: Easy German Daily Lesson
+name: Legacy Daily Lesson - Manual Only
 
 on:
   workflow_dispatch:
     inputs:
       study_date:
-        description: "Study date in YYYY-MM-DD format"
+        description: "Legacy test only: Study date in YYYY-MM-DD format"
         required: true
         default: "2026-09-29"
 
-  schedule:
-    - cron: "10 5 * * 1-5"
-
 jobs:
-  lesson:
+  legacy-lesson:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,17 +29,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Choose study date
-        id: studydate
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "study_date=${{ github.event.inputs.study_date }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "study_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Restore YouTube cookies
+      - name: Restore YouTube cookies if available
         shell: bash
         env:
           YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
@@ -51,22 +38,16 @@ jobs:
             printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
             chmod 600 youtube_cookies.txt
             echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
-            echo "YouTube cookies restored."
-          else
-            echo "YOUTUBE_COOKIES_B64 is not set. Cookie fallback will be skipped."
           fi
 
-      - name: Run daily lesson pipeline
+      - name: Run legacy date-based pipeline
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATA_SOURCE_ID: 6878c89b-220b-4dc4-96a1-ae021d37a2b3
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5-mini
-        run: |
-          python run_daily_lesson.py --study-date "${{ steps.studydate.outputs.study_date }}"
+        run: python run_daily_lesson.py --study-date "${{ github.event.inputs.study_date }}"
 
       - name: Delete temporary YouTube cookies
         if: ${{ always() }}
-        shell: bash
-        run: |
-          rm -f youtube_cookies.txt
+        run: rm -f youtube_cookies.txt
