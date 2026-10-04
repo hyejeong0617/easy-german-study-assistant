@@ -72,6 +72,21 @@ def rich_text_value(text: str) -> dict[str, Any]:
     return {"rich_text": [{"type": "text", "text": {"content": text[:2000]}}]}
 
 
+def linked_rich_text_value(label: str, url: str) -> dict[str, Any]:
+    """Clickable rich-text link that is also visible in Notion Calendar details."""
+    return {
+        "rich_text": [
+            {
+                "type": "text",
+                "text": {
+                    "content": label[:2000],
+                    "link": {"url": url},
+                },
+            }
+        ]
+    }
+
+
 def title_value(text: str) -> dict[str, Any]:
     return {"title": [{"type": "text", "text": {"content": text[:2000]}}]}
 
@@ -115,6 +130,7 @@ def page_properties(row: dict[str, Any]) -> dict[str, Any]:
         "Playlist Order": {"number": int(row["playlist_order"])},
         "Video ID": rich_text_value(row["video_id"]),
         "Video URL": {"url": row["url"]},
+        "Watch on YouTube": linked_rich_text_value("▶ Watch on YouTube", row["url"]),
         "Study Date": {"date": {"start": row["study_date"]}},
     }
     if row.get("duration_minutes") is not None:
