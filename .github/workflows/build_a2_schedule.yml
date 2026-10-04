@@ -2,6 +2,11 @@ name: Build A2 Sprint Schedule
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/schedule_trigger.txt"
 
 jobs:
   build-schedule:
