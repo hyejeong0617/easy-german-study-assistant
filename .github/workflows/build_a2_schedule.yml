@@ -1,0 +1,52 @@
+name: Build A2 Sprint Schedule
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-schedule:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js for yt-dlp
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore YouTube cookies if available
+        shell: bash
+        env:
+          YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
+        run: |
+          if [ -n "$YOUTUBE_COOKIES_B64" ]; then
+            printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
+            chmod 600 youtube_cookies.txt
+            echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
+            echo "YouTube cookies restored."
+          else
+            echo "No YouTube cookie secret. Trying public playlist metadata without cookies."
+          fi
+
+      - name: Build and sync full A2 sprint
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATA_SOURCE_ID: 6878c89b-220b-4dc4-96a1-ae021d37a2b3
+          A2_PLAYLIST_URL: https://www.youtube.com/playlist?list=PLk1fjOl39-5201BUdhtOM_x23poNvLouT
+          A2_SPRINT_START: "2026-10-05"
+          A2_SPRINT_END: "2026-12-10"
+        run: python build_a2_schedule.py
+
+      - name: Delete temporary YouTube cookies
+        if: ${{ always() }}
+        run: rm -f youtube_cookies.txt
