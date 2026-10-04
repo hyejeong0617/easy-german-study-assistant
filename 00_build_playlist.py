@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Fetch the full Easy German playlist with as few YouTube requests as possible.
 
-The sprint scheduler only needs playlist order, title, video ID and URL.
-Duration is used when yt-dlp exposes it in flat-playlist metadata, but we do not
-make one extra request per video just to resolve missing duration values.
+For playlist metadata we first try WITHOUT cookies because stale YouTube account
+cookies can make an otherwise public playlist request fail. If that fails and
+YOUTUBE_COOKIES_FILE exists, we retry once with cookies.
 
-Optional environment variable:
-- YOUTUBE_COOKIES_FILE: path to a Netscape-format cookies.txt file
+The sprint scheduler only needs playlist order, title, video ID and URL.
+Duration is kept when yt-dlp exposes it in flat-playlist metadata; we do not
+make one extra request per video just to resolve missing durations.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 
-def run_yt_dlp(args: list[str]) -> str:
+def run_yt_dlp(args: list[str], use_cookies: bool = False) -> str:
     cmd = [
         "yt-dlp",
         "--js-runtimes", "node",
@@ -28,7 +29,7 @@ def run_yt_dlp(args: list[str]) -> str:
     ]
 
     cookies_file = os.getenv("YOUTUBE_COOKIES_FILE")
-    if cookies_file and Path(cookies_file).exists():
+    if use_cookies and cookies_file and Path(cookies_file).exists():
         cmd.extend(["--cookies", cookies_file])
 
     proc = subprocess.run(
@@ -39,21 +40,32 @@ def run_yt_dlp(args: list[str]) -> str:
         errors="replace",
     )
     if proc.returncode != 0:
-        raise RuntimeError(
-            "yt-dlp failed.\n"
-            f"Command: {' '.join(cmd[:8])} ...\n"
-            f"stderr:\n{proc.stderr[-4000:]}"
-        )
+        raise RuntimeError(proc.stderr[-4000:] or proc.stdout[-4000:])
     return proc.stdout
 
 
 def get_flat_playlist(playlist_url: str) -> list[dict[str, Any]]:
-    raw = run_yt_dlp([
+    args = [
         "--flat-playlist",
         "--dump-single-json",
         "--no-warnings",
         playlist_url,
-    ])
+    ]
+
+    try:
+        raw = run_yt_dlp(args, use_cookies=False)
+        print("[ok] playlist metadata fetched without cookies")
+    except Exception as first_exc:
+        cookies_file = os.getenv("YOUTUBE_COOKIES_FILE")
+        if not cookies_file or not Path(cookies_file).exists():
+            raise RuntimeError(
+                "Public playlist fetch failed and no cookie fallback is available.\n"
+                f"{first_exc}"
+            ) from first_exc
+
+        print("[warn] public playlist fetch failed; retrying with cookies")
+        raw = run_yt_dlp(args, use_cookies=True)
+
     data = json.loads(raw)
     return [entry for entry in (data.get("entries") or []) if entry]
 
