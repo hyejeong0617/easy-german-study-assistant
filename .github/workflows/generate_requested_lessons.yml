@@ -1,6 +1,11 @@
 name: Generate Requested Lessons
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/requested_lessons/transcripts/*.txt"
   workflow_dispatch:
 
 jobs:
@@ -16,36 +21,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Node.js for yt-dlp
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore YouTube cookies if available
-        shell: bash
-        env:
-          YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
-        run: |
-          if [ -n "$YOUTUBE_COOKIES_B64" ]; then
-            printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > youtube_cookies.txt
-            chmod 600 youtube_cookies.txt
-            echo "YOUTUBE_COOKIES_FILE=$GITHUB_WORKSPACE/youtube_cookies.txt" >> "$GITHUB_ENV"
-            echo "YouTube cookies restored."
-          else
-            echo "No YouTube cookie secret. Cookie fallback will be skipped."
-          fi
-
-      - name: Generate requested lessons only
+      - name: Generate lessons from committed transcripts
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATA_SOURCE_ID: 6878c89b-220b-4dc4-96a1-ae021d37a2b3
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5-mini
-        run: python generate_requested_lessons.py
-
-      - name: Delete temporary YouTube cookies
-        if: ${{ always() }}
-        run: rm -f youtube_cookies.txt
+        run: python generate_lessons_from_transcripts.py
