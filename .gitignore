@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Generated lesson JSON is ephemeral in GitHub Actions.
+data/requested_lessons/lessons/*.json
+
+# Temporary subtitle files.
+*.vtt
+youtube_cookies.txt
