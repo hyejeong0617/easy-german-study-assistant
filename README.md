@@ -1,21 +1,23 @@
-# Easy German Study Assistant — A2 Sprint v4
+# Easy German Study Assistant — A2 Sprint v5
 
 목표: **2026-10-05 ~ 2026-12-10** 동안 Easy German A2 플레이리스트를 월–금 기준으로 빠르게 완주하고, 필요한 영상만 선택해서 AI lesson을 생성한다.
 
 A2 playlist:
 `https://www.youtube.com/playlist?list=PLk1fjOl39-5201BUdhtOM_x23poNvLouT`
 
-## 핵심 원칙
+## 핵심 구조
 
-이 시스템은 완전자동이 아니라 **human-in-the-loop 반자동화**다.
+이 시스템은 **human-in-the-loop 반자동화**다.
 
 1. 전체 A2 영상을 Notion Calendar에 미리 배치한다.
 2. 학습자는 그날의 영상을 직접 시청한다.
-3. 영상마다 `Study Status`를 선택한다.
-4. 복습이 필요한 영상만 `Lesson Request`를 체크한다.
-5. `Generate Requested Lessons` workflow를 실행하면 체크된 영상만 AI lesson이 생성된다.
+3. AI 복습이 필요한 영상만 `Lesson Request`를 체크한다.
+4. Windows에서 `EasyGermanLesson.bat`를 더블클릭한다.
+5. **YouTube 자막은 사용자의 PC/가정용 인터넷에서만 추출**한다.
+6. transcript가 자동으로 GitHub에 push된다.
+7. GitHub Actions가 OpenAI lesson을 생성하고 Notion 페이지에 저장한다.
 
-날짜가 왔다고 lesson을 자동 생성하지 않는다.
+즉 GitHub Actions는 더 이상 YouTube 자막을 직접 요청하지 않는다.
 
 ---
 
@@ -26,7 +28,7 @@ Database: `Easy German Study`
 Data Source ID:
 `6878c89b-220b-4dc4-96a1-ae021d37a2b3`
 
-## 새 핵심 속성
+## 핵심 속성
 
 ### Study Status
 - `To Watch` — 아직 볼 영상
@@ -35,7 +37,7 @@ Data Source ID:
 - `Carry Over` — 그날 못 보고 backlog로 넘긴 영상
 
 ### Lesson Request
-체크박스. **AI lesson이 필요한 영상만 체크**한다.
+AI lesson이 필요한 영상만 체크한다.
 
 ### Lesson Status
 - `Not Requested`
@@ -46,101 +48,129 @@ Data Source ID:
 ### Lesson Generated At
 lesson이 성공적으로 생성된 시각.
 
-기존 `Status`, `Lesson`, `Transcript` 필드는 9월 MVP 기록과 호환성을 위해 당분간 유지한다.
+### Watch on YouTube
+각 영상으로 바로 이동하는 클릭 가능한 YouTube 링크.
+
+기존 `Status`, `Lesson`, `Transcript` 필드는 이전 MVP 기록과 호환성을 위해 유지한다.
 
 ## Views
-
 - `A2 Sprint Calendar` — 날짜별 시청 영상
-- `Lesson Queue` — Lesson Request가 체크되었고 아직 Generated가 아닌 영상
+- `Lesson Queue` — Lesson Request가 체크된 영상
 - `Carry Over` — 못 본 영상 backlog
 
 ---
 
-# 2. 전체 A2 일정 만들기
-
-GitHub:
+# 2. 전체 A2 일정
 
 `Actions → Build A2 Sprint Schedule → Run workflow`
 
-이 workflow는:
+전체 playlist metadata를 읽어 2026-10-05 ~ 2026-12-10 평일에 배치하고 Notion DB를 업데이트한다.
 
-1. Easy German A2 playlist 전체 metadata를 읽고
-2. 2026-10-05 ~ 2026-12-10 사이 평일을 계산하고
-3. 전체 영상을 날짜별로 최대한 균등하게 배분하고
-4. Notion DB에 새 row를 만들거나 기존 row를 업데이트한다.
-
-현재 기간은 평일 약 49일이다. 영상이 약 200개라면 대부분 하루 4개, 일부 날짜는 5개 정도가 된다.
-
-실행 파일:
+관련 파일:
 - `00_build_playlist.py`
 - `01_sync_notion.py`
 - `build_a2_schedule.py`
 
-`01_sync_notion.py`는 idempotent하게 설계되어 있어서 같은 스케줄을 다시 실행해도 기존 페이지를 찾아 업데이트한다. 이미 생성된 lesson과 사용자가 설정한 새 진행 상태는 가능한 한 보존한다.
-
 ---
 
-# 3. 매일 학습 방법
+# 3. 매일 사용하는 방법 — One Click
 
-Notion의 `A2 Sprint Calendar`에서 오늘 날짜를 연다.
+## Step 1. Notion에서 영상 시청
 
 각 영상 시청 후:
-
 - 봤으면 → `Study Status = Watched`
-- 너무 쉬워 별도 복습 불필요 → `Study Status = Skipped`
+- 너무 쉬워 복습 불필요 → `Study Status = Skipped`
 - 못 봤으면 → `Study Status = Carry Over`
-- AI 정리가 필요하면 → `Lesson Request = checked`
+- AI lesson이 필요하면 → `Lesson Request = checked`
 
-`Carry Over` 영상의 Study Date는 자동으로 밀지 않는다. 별도 `Carry Over` view에서 backlog로 관리한다.
+## Step 2. 바탕화면에서 실행
 
----
+로컬 repo 안의 `EasyGermanLesson.bat`를 바탕화면 바로가기로 만들어 사용한다.
 
-# 4. 요청한 영상만 AI lesson 만들기
-
-영상 시청 후 필요한 영상에 `Lesson Request`를 체크한다.
-
-그 다음 GitHub:
-
-`Actions → Generate Requested Lessons → Run workflow`
-
-workflow는 다음 조건만 조회한다.
-
-- `Lesson Request = true`
-- `Lesson Status != Generated`
-
-처리 순서:
+더블클릭하면 자동으로:
 
 `Notion Lesson Queue`
-→ `YouTube transcript 추출`
+→ `로컬 PC에서 YouTube transcript 추출`
+→ `transcript 파일 저장`
+→ `git commit + push`
+→ `GitHub Actions 자동 시작`
 → `OpenAI lesson 생성`
-→ `해당 Notion 페이지에 append`
-→ `Lesson Status = Generated`
-→ `Lesson Request = false`
+→ `Notion 페이지 업데이트`
 
-실행 파일:
-- `02_extract_transcript.py`
-- `03_generate_lesson.py`
-- `04_update_notion_lesson.py`
-- `generate_requested_lessons.py`
-
-실패하면:
-- `Lesson Status = Failed`
-- `Transcript = Failed`
-- `Lesson Request`는 그대로 유지되어 재시도 가능
-
-실패 로그를 Notion 본문에 계속 append하지 않는다.
+사용자가 GitHub Actions에서 Run workflow를 누를 필요가 없다.
 
 ---
 
-# 5. A2 Fast Track lesson 형식
+# 4. 최초 1회 로컬 설정
 
-목표는 한 영상당 약 5–10분 복습이다.
+로컬 repo를 최신 상태로 만든다.
+
+```bash
+git pull
+```
+
+`.env.example`을 복사해 `.env`를 만든다.
+
+필수 값:
+
+```env
+NOTION_TOKEN=secret_xxx
+NOTION_DATA_SOURCE_ID=6878c89b-220b-4dc4-96a1-ae021d37a2b3
+YOUTUBE_BROWSER=chrome
+```
+
+`OPENAI_API_KEY`는 로컬 실행에 필요하지 않다. OpenAI는 GitHub Actions의 Secret을 사용한다.
+
+`EasyGermanLesson.bat`는 첫 실행 시 `.venv`가 없으면 자동 생성하고 requirements를 설치한다.
+
+필수 프로그램:
+- Python 3.12+
+- Git
+- Node.js (yt-dlp의 YouTube JS challenge 대응용)
+
+GitHub push 인증은 로컬 Git에 미리 로그인되어 있어야 한다.
+
+브라우저 cookie fallback이 필요할 때 Chrome을 사용한다. 환경에 따라 Chrome이 cookie DB를 잠그는 경우 브라우저를 완전히 종료한 뒤 다시 실행하면 된다. Firefox나 Edge를 쓰려면 `.env`의 `YOUTUBE_BROWSER`를 변경한다.
+
+---
+
+# 5. 새 파일 역할
+
+## `fetch_requested_transcripts_local.py`
+로컬 전용.
+
+- Notion에서 `Lesson Request = true` 조회
+- YouTube transcript를 **로컬 PC**에서 추출
+- transcript를 `data/requested_lessons/transcripts/`에 저장
+- Notion의 `Transcript = Ready`, `Lesson Status = Requested` 업데이트
+- transcript 파일만 git commit/push
+- OpenAI를 호출하지 않음
+
+## `EasyGermanLesson.bat`
+Windows one-click launcher.
+
+## `generate_lessons_from_transcripts.py`
+GitHub Actions 전용.
+
+- YouTube에 접속하지 않음
+- 이미 push된 transcript만 읽음
+- `03_generate_lesson.py`로 OpenAI lesson 생성
+- `04_update_notion_lesson.py`로 Notion 업데이트
+
+## `.github/workflows/generate_requested_lessons.yml`
+`data/requested_lessons/transcripts/*.txt`가 main에 push되면 자동 실행.
+
+---
+
+# 6. A2 Fast Track lesson 형식
+
+한 영상당 약 5–10분 복습을 목표로 한다.
 
 ### 1. Video in 3 Lines
-영상 핵심을 한국어 2–3문장으로 정리.
+영상 핵심 한국어 2–3문장.
 
 ### 2. Must-Know Expressions
-실제 transcript에 근거한 재사용 가능한 표현 약 5개.
+실제 transcript에 근거한 재사용 가능한 표현 5개.
 
 ### 3. Vocabulary
 A2→B1 전환에 유용한 단어 5–7개. 너무 기본적인 A1 단어는 우선순위를 낮춘다.
@@ -158,79 +188,32 @@ AI는 영상에서 나왔다고 주장하는 문장을 임의로 만들지 않�
 
 ---
 
-# 6. GitHub Secrets
+# 7. GitHub Secrets
 
-필수:
+GitHub Actions 필수:
 - `NOTION_TOKEN`
 - `OPENAI_API_KEY`
 
-선택적이지만 YouTube 차단 fallback에 사용:
-- `YOUTUBE_COOKIES_B64`
-
-`cookies.txt`를 Base64로 변환하는 Windows PowerShell:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt")) | Set-Clipboard
-```
-
-GitHub:
-`Settings → Secrets and variables → Actions`
-
-Secret name:
-`YOUTUBE_COOKIES_B64`
-
-YouTube cookies는 회전/만료될 수 있으므로 영구적인 해결책으로 간주하지 않는다. Lesson generation은 사용자가 요청한 영상에만 수행되어 자동 요청량을 최소화한다.
+`YOUTUBE_COOKIES_B64`는 **새 lesson workflow에서는 사용하지 않는다.**
+YouTube 접근이 필요한 transcript 단계가 로컬 PC로 이동했기 때문이다.
 
 ---
 
-# 7. Workflows
+# 8. Workflows
 
 ## `Build A2 Sprint Schedule`
-- 수동 실행
-- 전체 playlist → Notion Calendar
-- 일반적으로 sprint 시작 전 한 번 실행
+전체 playlist → Notion Calendar. 필요할 때만 수동 실행.
 
 ## `Generate Requested Lessons`
-- 수동 실행
-- Lesson Request가 체크된 영상만 처리
+기본적으로 **transcript push 시 자동 실행**.
+수동 `workflow_dispatch`도 비상용으로 남겨둔다.
 
 ## `Legacy Daily Lesson - Manual Only`
-- 9월 MVP 테스트용
-- 자동 schedule 제거됨
-- 새 학습 루틴에서는 사용하지 않는다
-
----
-
-# 8. Local run
-
-```bash
-python -m venv .venv
-```
-
-Windows:
-
-```bash
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-전체 일정:
-
-```bash
-python build_a2_schedule.py
-```
-
-요청 lesson 처리:
-
-```bash
-python generate_requested_lessons.py
-```
+9월 MVP 테스트용. 새 학습 루틴에서는 사용하지 않는다.
 
 ---
 
 # 9. Sprint 철학
-
-이 프로젝트의 우선순위는:
 
 1. A2 전체 듣기 노출량 확보
 2. 이해한 영상은 빠르게 통과
@@ -238,4 +221,4 @@ python generate_requested_lessons.py
 4. 12월 중 A2 sprint 종료
 5. 1월 B1 단계로 이동
 
-즉 **모든 영상에서 lesson을 만드는 것이 목표가 아니다.**
+**모든 영상에서 lesson을 만드는 것이 목표가 아니다.**
