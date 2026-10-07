@@ -8,6 +8,8 @@ Default sprint:
 
 Videos are distributed as evenly as possible by count. Existing pages are
 updated in place, so generated lessons and user progress are preserved.
+Each row also stores the total planned watch time for its Study Date so the
+calendar can show the day's total viewing load at a glance.
 """
 
 from __future__ import annotations
@@ -66,6 +68,19 @@ def assign_schedule(rows: list[dict[str, Any]], days: list[date]) -> None:
                 return
             rows[index]["study_date"] = study_day.isoformat()
             index += 1
+
+
+def assign_daily_totals(rows: list[dict[str, Any]]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        study_date = row["study_date"]
+        duration = float(row.get("duration_minutes") or 0.0)
+        totals[study_date] = totals.get(study_date, 0.0) + duration
+
+    rounded = {day: round(total, 1) for day, total in totals.items()}
+    for row in rows:
+        row["daily_total_minutes"] = rounded[row["study_date"]]
+    return rounded
 
 
 def rich_text_value(text: str) -> dict[str, Any]:
@@ -132,6 +147,7 @@ def page_properties(row: dict[str, Any]) -> dict[str, Any]:
         "Video URL": {"url": row["url"]},
         "Watch on YouTube": linked_rich_text_value("▶ Watch on YouTube", row["url"]),
         "Study Date": {"date": {"start": row["study_date"]}},
+        "Daily Total (min)": {"number": float(row["daily_total_minutes"])},
     }
     if row.get("duration_minutes") is not None:
         props["Duration (min)"] = {"number": float(row["duration_minutes"])}
@@ -199,6 +215,7 @@ def main() -> None:
     end = date.fromisoformat(args.end_date)
     days = weekday_dates(start, end)
     assign_schedule(rows, days)
+    daily_totals = assign_daily_totals(rows)
 
     notion = Client(auth=token)
     created = 0
@@ -234,6 +251,10 @@ def main() -> None:
     print(f"weekdays: {len(days)}")
     print(f"created: {created}, updated: {updated}")
     print(f"daily video count: min={min(counts.values())}, max={max(counts.values())}")
+    print(
+        "daily watch time (min): "
+        f"min={min(daily_totals.values()):.1f}, max={max(daily_totals.values()):.1f}"
+    )
     print(f"first date: {min(counts)}, last date: {max(counts)}")
 
 
